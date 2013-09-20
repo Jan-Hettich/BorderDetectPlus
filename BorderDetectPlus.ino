@@ -18,24 +18,20 @@
 #define REVERSE_DURATION  200 // ms
 #define TURN_DURATION     400 // ms
 
-
+ZumoBuzzer buzzer;
 const char charge[] PROGMEM = "O4 T100 V15 L4 MS g12>c12>e12>G6>E12 ML>G2";
 
- 
-ZumoBuzzer buzzer;
 ZumoMotors motors;
+
 Pushbutton button(ZUMO_BUTTON); // pushbutton on pin 12
  
 #define NUM_SENSORS 6
 unsigned int sensor_values[NUM_SENSORS];
 
-#define SEARCH 0
-#define ATTACK 1
-#define REGROUP 2
-
+#define SEARCH_MODE 0
+//#define ATTACK_MODE 1
+//#define ESCAPE_MODE 2
 unsigned char mode;
-
-#define LOOP_MAX 2500
 
 ZumoReflectanceSensorArray sensors(QTR_NO_EMITTER_PIN);
 
@@ -54,6 +50,9 @@ void waitForButtonAndCountDown()
   delay(1000);
   buzzer.playFromProgramSpace(charge);
   delay(1000);
+  
+  // initialize or re-initialize loop variables
+  mode = SEARCH_MODE;
 }
  
 void setup()
@@ -62,7 +61,6 @@ void setup()
   //motors.flipLeftMotor(true);
   //motors.flipRightMotor(true);
 
-  mode = SEARCH;
   pinMode(LED, HIGH);
   buzzer.playMode(PLAY_AUTOMATIC);
   waitForButtonAndCountDown();
@@ -70,7 +68,6 @@ void setup()
 
 void loop()
 {
-  static unsigned int loop_count = 0; 
   if (button.isPressed())
   {
     // if button is pressed, stop and wait for another press to go again
@@ -78,29 +75,20 @@ void loop()
     button.waitForRelease();
     waitForButtonAndCountDown();
   }
-  
-  if (loop_count % LOOP_MAX == LOOP_MAX - 1) 
-  {
-    buzzer.playFromProgramSpace(charge);
-  }
 
   switch (mode)
   {
-    case SEARCH:
-      search();
+    case SEARCH_MODE:
+      search_mode();
       break;
-    case ATTACK:
-      attack();
-      break;
-    case REGROUP:
-      regroup();
+    // other cases
+    default:
       break;
   }
-  
-  loop_count += 1;  
+ 
 }
 
-void search() 
+void search_mode() 
 {
   
   sensors.read(sensor_values);
@@ -123,17 +111,18 @@ void search()
     delay(300);
     motors.setSpeeds(FORWARD_SPEED, FORWARD_SPEED);
   }
-  else
+  else  // otherwise, go straight
   {
-    // otherwise, go straight
     motors.setSpeeds(FORWARD_SPEED, FORWARD_SPEED);
   }
 }
 
-void attack()
+void on_contact_made()
+{
+  buzzer.playFromProgramSpace(charge);
+}
+
+void on_contact_lost()
 {
 }
 
-void regroup()
-{
-}
