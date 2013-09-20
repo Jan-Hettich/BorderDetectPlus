@@ -4,6 +4,8 @@
 #include <QTRSensors.h>
 #include <ZumoReflectanceSensorArray.h>
 #include <avr/pgmspace.h>
+#include <Wire.h>
+#include <LSM303.h>
  
 #define LED 13
  
@@ -35,8 +37,63 @@ unsigned char mode;
 
 ZumoReflectanceSensorArray sensors(QTR_NO_EMITTER_PIN);
 
-void waitForButtonAndCountDown()
+class Accelerometer : public LSM303
 {
+  public:
+    // enable accelerometer only
+    // to enables both accelerometer and magnetometer, call enableDefault() instead
+    void enable(void)
+    {
+      // Enable Accelerometer
+      // 0x27 = 0b00100111
+      // Normal power mode, all axes enabled
+      writeAccReg(LSM303_CTRL_REG1_A, 0x27);
+  
+      if (getDeviceType() == LSM303DLHC_DEVICE)
+      writeAccReg(LSM303_CTRL_REG4_A, 0x08); // DLHC: enable high resolution mode
+    }
+    
+    void readAcceleration(void)
+    {
+      readAcc();
+    }
+    
+};
+Accelerometer lsm303;
+
+#define USE_SERIAL
+
+void waitForButtonAndCountDown(bool restarting);
+
+void setup()
+{
+  // Initiate the Wire library and join the I2C bus as a master
+  Wire.begin();
+  
+  // Initiate LSM303
+  lsm303.init();
+  lsm303.enable();
+  
+#ifdef USE_SERIAL
+  Serial.begin(9600);
+#endif
+
+  // uncomment if necessary to correct motor directions
+  //motors.flipLeftMotor(true);
+  //motors.flipRightMotor(true);
+
+  pinMode(LED, HIGH);
+  buzzer.playMode(PLAY_AUTOMATIC);
+  waitForButtonAndCountDown(false);
+}
+
+void waitForButtonAndCountDown(bool restarting)
+{
+#ifdef USE_SERIAL
+  Serial.print(restarting ? "Restarting Countdown" : "Starting Countdown");
+  Serial.println();
+#endif
+  
   digitalWrite(LED, HIGH);
   button.waitForButton();
   digitalWrite(LED, LOW);
@@ -51,20 +108,10 @@ void waitForButtonAndCountDown()
   buzzer.playFromProgramSpace(charge);
   delay(1000);
   
-  // initialize or re-initialize loop variables
+  // reset loop variables
   mode = SEARCH_MODE;
 }
- 
-void setup()
-{
-  // uncomment if necessary to correct motor directions
-  //motors.flipLeftMotor(true);
-  //motors.flipRightMotor(true);
 
-  pinMode(LED, HIGH);
-  buzzer.playMode(PLAY_AUTOMATIC);
-  waitForButtonAndCountDown();
-}
 
 void loop()
 {
@@ -73,8 +120,10 @@ void loop()
     // if button is pressed, stop and wait for another press to go again
     motors.setSpeeds(0, 0);
     button.waitForRelease();
-    waitForButtonAndCountDown();
+    waitForButtonAndCountDown(true);
   }
+  
+  lsm303.readAcceleration();
 
   switch (mode)
   {
