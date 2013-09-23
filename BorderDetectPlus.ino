@@ -10,7 +10,7 @@
  
 #define LED 13
 
-#define USE_SERIAL // write output to serial port
+// #define LOG_SERIAL // write log output to serial port
  
 // this might need to be tuned for different lighting conditions, surfaces, etc.
 #define QTR_THRESHOLD  1500 // microseconds
@@ -19,12 +19,17 @@
 #define REVERSE_SPEED     200 // 0 is stopped, 400 is full speed
 #define TURN_SPEED        200
 #define FORWARD_SPEED     200
-#define ATTACK_SPEED      400
+#define FULL_SPEED        400
 #define REVERSE_DURATION  200 // ms
 #define TURN_DURATION     400 // ms
 
+#define IGNORE_ACCERATION_AFTER_TURN  4  // # of loops to ignore acceleration reading after turning
+unsigned int loops_after_turning;
+#define MIN_DELAY_BETWEEN_CONTACTS 1500  // min delay between lost_contact and made_contact events
+unsigned long contact_lost_time;
+
 ZumoBuzzer buzzer;
-const char charge[] PROGMEM = "O4 T100 V15 L4 MS g12>c12>e12>G6>E12 ML>G2";  // use V0 to suppress "charge" sound effect
+const char charge[] PROGMEM = "O4 T100 V0 L4 MS g12>c12>e12>G6>E12 ML>G2";  // use V0 to suppress "charge" sound effect; v15 for max volume
 
 ZumoMotors motors;
 
@@ -86,7 +91,7 @@ class Accelerometer : public LSM303
       ra_y.addValue(last.y);
       ra_len_xy.addValue(last.len);
  
-#ifdef USE_SERIAL
+#ifdef LOG_SERIAL
      Serial.print(last.ms);
      Serial.print("  ");
      Serial.print(last.x);
@@ -143,6 +148,7 @@ class Accelerometer : public LSM303
 Accelerometer lsm303;
 
 void waitForButtonAndCountDown(bool restarting);
+int forward_speed;
 
 void setup()
 {
@@ -153,7 +159,7 @@ void setup()
   lsm303.init();
   lsm303.enable();
   
-#ifdef USE_SERIAL
+#ifdef LOG_SERIAL
   Serial.begin(9600);
   lsm303.getAccelerationHeader();
 #endif
@@ -169,7 +175,7 @@ void setup()
 
 void waitForButtonAndCountDown(bool restarting)
 {
-#ifdef USE_SERIAL
+#ifdef LOG_SERIAL
   Serial.print(restarting ? "Restarting Countdown" : "Starting Countdown");
   Serial.println();
 #endif
@@ -189,7 +195,9 @@ void waitForButtonAndCountDown(bool restarting)
   delay(1000);
   
   // reset loop variables
-
+  forward_speed = FORWARD_SPEED;
+  contact_lost_time = millis();
+  loops_after_turning = 0;
 }
 
 
@@ -203,13 +211,22 @@ void loop()
     waitForButtonAndCountDown(true);
   }
   
-  lsm303.readAcceleration();
+  if (loops_after_turning > 0) loops_after_turning--;
   
+  lsm303.readAcceleration(); 
   sensors.read(sensor_values);
   
   if (sensor_values[0] < QTR_THRESHOLD)
   {
     // if leftmost sensor detects line, reverse and turn to the right
+#ifdef LOG_SERIAL
+    Serial.print("turning right ...");
+    Serial.println();
+#endif
+    // assume contact lost
+    on_contact_lost();
+    loops_after_turning = IGNORE_ACCERATION_AFTER_TURN;
+    
     motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
     delay(200);
     motors.setSpeeds(TURN_SPEED, -TURN_SPEED);
@@ -219,6 +236,14 @@ void loop()
   else if (sensor_values[5] < QTR_THRESHOLD)
   {
     // if rightmost sensor detects line, reverse and turn to the left
+#ifdef LOG_SERIAL
+    Serial.print("turning left ...");
+    Serial.println();
+#endif
+    // assume contact lost
+    on_contact_lost();
+    loops_after_turning = IGNORE_ACCERATION_AFTER_TURN;
+    
     motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
     delay(200);
     motors.setSpeeds(-TURN_SPEED, TURN_SPEED);
@@ -227,16 +252,38 @@ void loop()
   }
   else  // otherwise, go straight
   {
-    motors.setSpeeds(FORWARD_SPEED, FORWARD_SPEED);
+    if (check_for_contact()) on_contact_made();
+    motors.setSpeeds(forward_speed, forward_speed);
   }
 }
 
+// check for contact, but ignore readings immediately after turning or losing contact
+bool check_for_contact()
+{
+  return (lsm303.len_xy_avg() > 150.0) && \
+    (loops_after_turning <= 0) && \
+    (millis() - contact_lost_time > MIN_DELAY_BETWEEN_CONTACTS);
+}
+
+// sound horn and accelerate on contact -- fight or flight
 void on_contact_made()
 {
+#ifdef LOG_SERIAL
+  Serial.print("contact made");
+  Serial.println();
+#endif
+  forward_speed = FULL_SPEED;
   buzzer.playFromProgramSpace(charge);
 }
 
+// reset forward speed
 void on_contact_lost()
 {
+#ifdef LOG_SERIAL
+  Serial.print("contact lost");
+  Serial.println();
+#endif
+  contact_lost_time = millis();
+  forward_speed = FORWARD_SPEED;
 }
 
