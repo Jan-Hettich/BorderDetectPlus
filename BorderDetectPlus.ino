@@ -9,6 +9,8 @@
 #include <RunningAverage.h> // from playground.arduino.cc/Main/RunningAverage
  
 #define LED 13
+
+#define USE_SERIAL // write output to serial port
  
 // this might need to be tuned for different lighting conditions, surfaces, etc.
 #define QTR_THRESHOLD  1500 // microseconds
@@ -22,7 +24,7 @@
 #define TURN_DURATION     400 // ms
 
 ZumoBuzzer buzzer;
-const char charge[] PROGMEM = "O4 T100 V15 L4 MS g12>c12>e12>G6>E12 ML>G2";
+const char charge[] PROGMEM = "O4 T100 V0 L4 MS g12>c12>e12>G6>E12 ML>G2";  // V15
 
 ZumoMotors motors;
 
@@ -47,8 +49,8 @@ class Accelerometer : public LSM303
     unsigned long ms;
     float x;
     float y;
-    float len_xy;
-    float dir_xy;
+    float len;
+    float dir;
   } acc_data_xy;
   
   public:
@@ -68,9 +70,45 @@ class Accelerometer : public LSM303
       writeAccReg(LSM303_CTRL_REG4_A, 0x08); // DLHC: enable high resolution mode
     }
     
+    void getAccelerationHeader(void)
+    {
+      Serial.print("millis    x      y     len     dir  | len_avg  dir_avg  |  avg_len");
+      Serial.println();
+    }
+    
     void readAcceleration(void)
     {
       readAcc();
+      if (a.x == last.x && a.y == last.y) return;
+      
+      last.ms = millis();
+      last.x = a.x;
+      last.y = a.y;
+      last.len = sqrt(a.x*a.x + a.y*a.y);
+      last.dir = atan2(a.x, a.y) * 180.0 / M_PI;
+      
+      ra_x.addValue(last.x);
+      ra_y.addValue(last.y);
+      ra_len_xy.addValue(last.len);
+ 
+#ifdef USE_SERIAL
+     Serial.print(last.ms);
+     Serial.print("  ");
+     Serial.print(last.x);
+     Serial.print("  ");
+     Serial.print(last.y);
+     Serial.print("  ");
+     Serial.print(last.len);
+     Serial.print("  ");
+     Serial.print(last.dir);
+     Serial.print("  |  ");
+     Serial.print(len_xy_avg());
+     Serial.print("  ");
+     Serial.print(dir_xy_avg());
+     Serial.print("  |  ");
+     Serial.print(avg_len_xy());
+     Serial.println();
+     #endif
     }
     
     float x_avg(void) const
@@ -87,12 +125,12 @@ class Accelerometer : public LSM303
     
     float len_xy_avg(void) const
     {
-      return pvt_len_xy_avg;
+      return sqrt(x_avg()*x_avg() + y_avg()*y_avg());
     }
     
     float dir_xy_avg(void) const
     {
-      return pvt_dir_xy_avg; 
+      return atan2(x_avg(), y_avg()) * 180.0 / M_PI;
     }
     
     float avg_len_xy(void) const
@@ -105,13 +143,9 @@ class Accelerometer : public LSM303
     acc_data_xy last;
     RunningAverage ra_x;
     RunningAverage ra_y;
-    float pvt_len_xy_avg;  // manginute of the running average vector
-    float pvt_dir_xy_avg;  // direction of the running average vector
     RunningAverage ra_len_xy;  // running average xy vector magnitues
 };
 Accelerometer lsm303;
-
-#define USE_SERIAL
 
 void waitForButtonAndCountDown(bool restarting);
 
@@ -126,6 +160,7 @@ void setup()
   
 #ifdef USE_SERIAL
   Serial.begin(9600);
+  lsm303.getAccelerationHeader();
 #endif
 
   // uncomment if necessary to correct motor directions
