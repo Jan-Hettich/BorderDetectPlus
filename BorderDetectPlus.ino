@@ -24,7 +24,7 @@
 #define TURN_DURATION     400 // ms
 
 ZumoBuzzer buzzer;
-const char charge[] PROGMEM = "O4 T100 V0 L4 MS g12>c12>e12>G6>E12 ML>G2";  // V15
+const char charge[] PROGMEM = "O4 T100 V15 L4 MS g12>c12>e12>G6>E12 ML>G2";  // use V0 to suppress "charge" sound effect
 
 ZumoMotors motors;
 
@@ -32,11 +32,6 @@ Pushbutton button(ZUMO_BUTTON); // pushbutton on pin 12
  
 #define NUM_SENSORS 6
 unsigned int sensor_values[NUM_SENSORS];
-
-#define SEARCH_MODE 0
-//#define ATTACK_MODE 1
-//#define ESCAPE_MODE 2
-unsigned char mode;
 
 ZumoReflectanceSensorArray sensors(QTR_NO_EMITTER_PIN);
 
@@ -194,7 +189,7 @@ void waitForButtonAndCountDown(bool restarting)
   delay(1000);
   
   // reset loop variables
-  mode = SEARCH_MODE;
+
 }
 
 
@@ -209,21 +204,6 @@ void loop()
   }
   
   lsm303.readAcceleration();
-
-  switch (mode)
-  {
-    case SEARCH_MODE:
-      search_mode();
-      break;
-    // other cases
-    default:
-      break;
-  }
- 
-}
-
-void search_mode() 
-{
   
   sensors.read(sensor_values);
   
