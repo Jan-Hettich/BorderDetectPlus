@@ -6,6 +6,7 @@
 #include <avr/pgmspace.h>
 #include <Wire.h>
 #include <LSM303.h>
+#include <RunningAverage.h> // from playground.arduino.cc/Main/RunningAverage
  
 #define LED 13
  
@@ -37,9 +38,23 @@ unsigned char mode;
 
 ZumoReflectanceSensorArray sensors(QTR_NO_EMITTER_PIN);
 
+#define RA_SIZE 3  // number of readings to include in running average of accelerometer readings
+
 class Accelerometer : public LSM303
 {
+  typedef struct acc_data_xy
+  {
+    unsigned long ms;
+    float x;
+    float y;
+    float len_xy;
+    float dir_xy;
+  } acc_data_xy;
+  
   public:
+  
+    Accelerometer() : ra_x(RA_SIZE), ra_y(RA_SIZE), ra_len_xy(RA_SIZE) {}
+    
     // enable accelerometer only
     // to enables both accelerometer and magnetometer, call enableDefault() instead
     void enable(void)
@@ -58,6 +73,41 @@ class Accelerometer : public LSM303
       readAcc();
     }
     
+    float x_avg(void) const
+    {
+      // getAverage should have been declared const in RunningAverage class
+      return const_cast<RunningAverage&>(ra_x).getAverage();
+    }
+    
+    float y_avg(void) const
+    {
+      // getAverage should have been declared const in RunningAverage class
+      return const_cast<RunningAverage&>(ra_y).getAverage();
+    }
+    
+    float len_xy_avg(void) const
+    {
+      return pvt_len_xy_avg;
+    }
+    
+    float dir_xy_avg(void) const
+    {
+      return pvt_dir_xy_avg; 
+    }
+    
+    float avg_len_xy(void) const
+    {
+      // getAverage should have been declared const in RunningAverage class
+      return const_cast<RunningAverage&>(ra_len_xy).getAverage();
+    }
+    
+  private:
+    acc_data_xy last;
+    RunningAverage ra_x;
+    RunningAverage ra_y;
+    float pvt_len_xy_avg;  // manginute of the running average vector
+    float pvt_dir_xy_avg;  // direction of the running average vector
+    RunningAverage ra_len_xy;  // running average xy vector magnitues
 };
 Accelerometer lsm303;
 
