@@ -18,7 +18,7 @@
 // these might need to be tuned for different motor types
 #define REVERSE_SPEED     200 // 0 is stopped, 400 is full speed
 #define TURN_SPEED        200
-#define FORWARD_SPEED     200
+#define SEARCH_SPEED      200
 #define SUSTAINED_SPEED   325
 #define FULL_SPEED        400
 #define STOP_DURATION     100 // ms
@@ -152,6 +152,7 @@ Accelerometer lsm303;
 
 void waitForButtonAndCountDown(bool restarting);
 int forward_speed;
+boolean bContact;
 
 void setup()
 {  
@@ -200,7 +201,7 @@ void waitForButtonAndCountDown(bool restarting)
   delay(1000);
   
   // reset loop variables
-  forward_speed = FORWARD_SPEED;
+  bContact = false;  // 1 if contact made; 0 if no contact or contact lost
   contact_lost_time = millis();
   loop_count_since_last_turn = 0;
 }
@@ -237,7 +238,8 @@ void loop()
     delay(REVERSE_DURATION);
     motors.setSpeeds(TURN_SPEED, -TURN_SPEED);
     delay(turnDuration(true));
-    motors.setSpeeds(FORWARD_SPEED, FORWARD_SPEED);
+    int forward_speed = forwardSpeed();
+    motors.setSpeeds(forward_speed, forward_speed);
   }
   else if (sensor_values[5] < QTR_THRESHOLD)
   {
@@ -257,11 +259,13 @@ void loop()
     delay(REVERSE_DURATION);
     motors.setSpeeds(-TURN_SPEED, TURN_SPEED);
     delay(turnDuration(true));
-    motors.setSpeeds(FORWARD_SPEED, FORWARD_SPEED);
+    int forward_speed = forwardSpeed();
+    motors.setSpeeds(forward_speed, forward_speed);
   }
   else  // otherwise, go straight
   {
     if (check_for_contact()) on_contact_made();
+    int forward_speed = forwardSpeed();
     motors.setSpeeds(forward_speed, forward_speed);
   }
 }
@@ -270,6 +274,17 @@ void loop()
 unsigned long turnDuration(boolean bRand)
 {
   return bRand ? TURN_DURATION + random(5) * 50 : TURN_DURATION;
+}
+
+// set forwards speed
+int forwardSpeed()
+{
+  int s = SEARCH_SPEED; // default speed if no contact
+  if (bContact)
+  { 
+    s = loop_count_since_last_turn <= FULL_SPEED_LOOP_LIMIT ? FULL_SPEED : SUSTAINED_SPEED;
+  }
+  return s;
 }
   
 // check for contact, but ignore readings immediately after turning or losing contact
@@ -287,7 +302,7 @@ void on_contact_made()
   Serial.print("contact made");
   Serial.println();
 #endif
-  forward_speed = FULL_SPEED;
+  bContact = true;
   buzzer.playFromProgramSpace(charge);
 }
 
@@ -298,7 +313,7 @@ void on_contact_lost()
   Serial.print("contact lost");
   Serial.println();
 #endif
+  bContact = false;
   contact_lost_time = millis();
-  forward_speed = FORWARD_SPEED;
 }
 
