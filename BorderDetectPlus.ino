@@ -10,7 +10,7 @@
  
 #define LED 13
 
-// #define LOG_SERIAL // write log output to serial port
+#define LOG_SERIAL // write log output to serial port
  
 // this might need to be tuned for different lighting conditions, surfaces, etc.
 #define QTR_THRESHOLD  1500 // microseconds
@@ -20,8 +20,9 @@
 #define TURN_SPEED        200
 #define FORWARD_SPEED     200
 #define FULL_SPEED        400
+#define STOP_DURATION     100 // ms
 #define REVERSE_DURATION  200 // ms
-#define TURN_DURATION     400 // ms
+#define TURN_DURATION     300 // ms
 
 #define IGNORE_ACCERATION_AFTER_TURN  4  // # of loops to ignore acceleration reading after turning
 unsigned int loops_after_turning;
@@ -151,7 +152,7 @@ void waitForButtonAndCountDown(bool restarting);
 int forward_speed;
 
 void setup()
-{
+{  
   // Initiate the Wire library and join the I2C bus as a master
   Wire.begin();
   
@@ -164,6 +165,8 @@ void setup()
   lsm303.getAccelerationHeader();
 #endif
 
+  randomSeed((unsigned int) millis());
+  
   // uncomment if necessary to correct motor directions
   //motors.flipLeftMotor(true);
   //motors.flipRightMotor(true);
@@ -174,7 +177,7 @@ void setup()
 }
 
 void waitForButtonAndCountDown(bool restarting)
-{
+{ 
 #ifdef LOG_SERIAL
   Serial.print(restarting ? "Restarting Countdown" : "Starting Countdown");
   Serial.println();
@@ -199,7 +202,6 @@ void waitForButtonAndCountDown(bool restarting)
   contact_lost_time = millis();
   loops_after_turning = 0;
 }
-
 
 void loop()
 {
@@ -227,10 +229,12 @@ void loop()
     on_contact_lost();
     loops_after_turning = IGNORE_ACCERATION_AFTER_TURN;
     
+    motors.setSpeeds(0,0);
+    delay(STOP_DURATION);
     motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
-    delay(200);
+    delay(REVERSE_DURATION);
     motors.setSpeeds(TURN_SPEED, -TURN_SPEED);
-    delay(300);
+    delay(turnDuration(true));
     motors.setSpeeds(FORWARD_SPEED, FORWARD_SPEED);
   }
   else if (sensor_values[5] < QTR_THRESHOLD)
@@ -244,10 +248,12 @@ void loop()
     on_contact_lost();
     loops_after_turning = IGNORE_ACCERATION_AFTER_TURN;
     
+    motors.setSpeeds(0,0);
+    delay(STOP_DURATION);
     motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
-    delay(200);
+    delay(REVERSE_DURATION);
     motors.setSpeeds(-TURN_SPEED, TURN_SPEED);
-    delay(300);
+    delay(turnDuration(true));
     motors.setSpeeds(FORWARD_SPEED, FORWARD_SPEED);
   }
   else  // otherwise, go straight
@@ -257,6 +263,12 @@ void loop()
   }
 }
 
+// randomized turn duration to improve searching
+unsigned long turnDuration(boolean bRand)
+{
+  return bRand ? TURN_DURATION + random(5) * 50 : TURN_DURATION;
+}
+  
 // check for contact, but ignore readings immediately after turning or losing contact
 bool check_for_contact()
 {
