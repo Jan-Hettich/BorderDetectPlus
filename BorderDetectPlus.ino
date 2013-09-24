@@ -29,6 +29,7 @@
 #define FULL_SPEED_LOOP_LIMIT 100
 unsigned int loop_count_since_last_turn;  // reset after turning
 #define MIN_DELAY_BETWEEN_CONTACTS 1500  // min delay between lost_contact and made_contact events
+boolean contact_made;
 unsigned long contact_lost_time;
 
 ZumoBuzzer buzzer;
@@ -151,8 +152,6 @@ class Accelerometer : public LSM303
 Accelerometer lsm303;
 
 void waitForButtonAndCountDown(bool restarting);
-int forward_speed;
-boolean bContact;
 
 void setup()
 {  
@@ -201,7 +200,7 @@ void waitForButtonAndCountDown(bool restarting)
   delay(1000);
   
   // reset loop variables
-  bContact = false;  // 1 if contact made; 0 if no contact or contact lost
+  contact_made = false;  // 1 if contact made; 0 if no contact or contact lost
   contact_lost_time = millis();
   loop_count_since_last_turn = 0;
 }
@@ -279,19 +278,16 @@ unsigned long turnDuration(boolean bRand)
 // set forwards speed
 int forwardSpeed()
 {
-  int s = SEARCH_SPEED; // default speed if no contact
-  if (bContact)
-  { 
-    s = loop_count_since_last_turn <= FULL_SPEED_LOOP_LIMIT ? FULL_SPEED : SUSTAINED_SPEED;
-  }
-  return s;
+  return contact_made ? \
+    (loop_count_since_last_turn <= FULL_SPEED_LOOP_LIMIT ? FULL_SPEED : SUSTAINED_SPEED) : \
+    SEARCH_SPEED; // default speed if no contact
 }
   
 // check for contact, but ignore readings immediately after turning or losing contact
 bool check_for_contact()
 {
   return (lsm303.len_xy_avg() > 150.0) && \
-    (loop_count_since_last_turn = 0 > IGNORE_ACCERATION_AFTER_TURN) && \
+    (loop_count_since_last_turn > IGNORE_ACCERATION_AFTER_TURN) && \
     (millis() - contact_lost_time > MIN_DELAY_BETWEEN_CONTACTS);
 }
 
@@ -302,7 +298,7 @@ void on_contact_made()
   Serial.print("contact made");
   Serial.println();
 #endif
-  bContact = true;
+  contact_made = true;
   buzzer.playFromProgramSpace(charge);
 }
 
@@ -313,7 +309,7 @@ void on_contact_lost()
   Serial.print("contact lost");
   Serial.println();
 #endif
-  bContact = false;
+  contact_made = false;
   contact_lost_time = millis();
 }
 
