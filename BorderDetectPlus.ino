@@ -26,7 +26,7 @@
 #define TURN_DURATION     300 // ms
 
 #define IGNORE_ACCERATION_AFTER_TURN  4  // # of loops to ignore acceleration reading after turning
-#define FULL_SPEED_LOOP_LIMIT 100
+#define FULL_SPEED_LOOP_LIMIT 25 // approx 0.6 secs
 unsigned int loop_count_since_last_turn;  // reset after turning
 #define MIN_DELAY_BETWEEN_CONTACTS 1500  // min delay between lost_contact and made_contact events
 boolean contact_made;
