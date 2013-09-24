@@ -19,13 +19,15 @@
 #define REVERSE_SPEED     200 // 0 is stopped, 400 is full speed
 #define TURN_SPEED        200
 #define FORWARD_SPEED     200
+#define SUSTAINED_SPEED   325
 #define FULL_SPEED        400
 #define STOP_DURATION     100 // ms
 #define REVERSE_DURATION  200 // ms
 #define TURN_DURATION     300 // ms
 
 #define IGNORE_ACCERATION_AFTER_TURN  4  // # of loops to ignore acceleration reading after turning
-unsigned int loops_after_turning;
+#define FULL_SPEED_LOOP_LIMIT 100
+unsigned int loop_count_since_last_turn;  // reset after turning
 #define MIN_DELAY_BETWEEN_CONTACTS 1500  // min delay between lost_contact and made_contact events
 unsigned long contact_lost_time;
 
@@ -200,7 +202,7 @@ void waitForButtonAndCountDown(bool restarting)
   // reset loop variables
   forward_speed = FORWARD_SPEED;
   contact_lost_time = millis();
-  loops_after_turning = 0;
+  loop_count_since_last_turn = 0;
 }
 
 void loop()
@@ -213,7 +215,7 @@ void loop()
     waitForButtonAndCountDown(true);
   }
   
-  if (loops_after_turning > 0) loops_after_turning--;
+  loop_count_since_last_turn++;
   
   lsm303.readAcceleration(); 
   sensors.read(sensor_values);
@@ -225,9 +227,9 @@ void loop()
     Serial.print("turning right ...");
     Serial.println();
 #endif
+    loop_count_since_last_turn = 0;
     // assume contact lost
     on_contact_lost();
-    loops_after_turning = IGNORE_ACCERATION_AFTER_TURN;
     
     motors.setSpeeds(0,0);
     delay(STOP_DURATION);
@@ -244,9 +246,10 @@ void loop()
     Serial.print("turning left ...");
     Serial.println();
 #endif
+
+    loop_count_since_last_turn = 0;
     // assume contact lost
     on_contact_lost();
-    loops_after_turning = IGNORE_ACCERATION_AFTER_TURN;
     
     motors.setSpeeds(0,0);
     delay(STOP_DURATION);
@@ -273,7 +276,7 @@ unsigned long turnDuration(boolean bRand)
 bool check_for_contact()
 {
   return (lsm303.len_xy_avg() > 150.0) && \
-    (loops_after_turning <= 0) && \
+    (loop_count_since_last_turn = 0 > IGNORE_ACCERATION_AFTER_TURN) && \
     (millis() - contact_lost_time > MIN_DELAY_BETWEEN_CONTACTS);
 }
 
