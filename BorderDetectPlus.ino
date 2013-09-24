@@ -273,7 +273,7 @@ void loop()
 // randomized turn duration to improve searching
 unsigned long turnDuration(boolean bRand)
 {
-  return bRand ? TURN_DURATION + random(5) * 50 : TURN_DURATION;
+  return bRand ? TURN_DURATION + (random(5) - 2) * 50 : TURN_DURATION;
 }
 
 // set forwards speed
