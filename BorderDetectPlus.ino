@@ -25,12 +25,16 @@
 #define REVERSE_DURATION  200 // ms
 #define TURN_DURATION     300 // ms
 
-#define IGNORE_ACCERATION_AFTER_TURN  4  // # of loops to ignore acceleration reading after turning
-#define FULL_SPEED_LOOP_LIMIT 25 // approx 0.6 secs
-unsigned int loop_count_since_last_turn;  // reset after turning
-#define MIN_DELAY_BETWEEN_CONTACTS 1500  // min delay between lost_contact and made_contact events
+#define RIGHT 1
+#define LEFT -1
+
+#define IGNORE_ACCERATION_AFTER_TURN  100  // ms
+#define FULL_SPEED_DURATION_LIMIT 300     // ms
+#define MIN_DELAY_BETWEEN_CONTACTS 1500    // ms = min delay between lost_contact and made_contact events
 boolean contact_made;
+unsigned long contact_made_time;
 unsigned long contact_lost_time;
+unsigned long last_turn_time;
 
 ZumoBuzzer buzzer;
 const char charge[] PROGMEM = "O4 T100 V0 L4 MS g12>c12>e12>G6>E12 ML>G2";  // use V0 to suppress "charge" sound effect; v15 for max volume
@@ -201,8 +205,10 @@ void waitForButtonAndCountDown(bool restarting)
   
   // reset loop variables
   contact_made = false;  // 1 if contact made; 0 if no contact or contact lost
-  contact_lost_time = millis();
-  loop_count_since_last_turn = 0;
+  unsigned long ms = millis();
+  contact_made_time = 0;
+  contact_lost_time = ms;
+  last_turn_time = ms;
 }
 
 void loop()
@@ -215,51 +221,18 @@ void loop()
     waitForButtonAndCountDown(true);
   }
   
-  loop_count_since_last_turn++;
-  
   lsm303.readAcceleration(); 
   sensors.read(sensor_values);
   
   if (sensor_values[0] < QTR_THRESHOLD)
   {
     // if leftmost sensor detects line, reverse and turn to the right
-#ifdef LOG_SERIAL
-    Serial.print("turning right ...");
-    Serial.println();
-#endif
-    loop_count_since_last_turn = 0;
-    // assume contact lost
-    on_contact_lost();
-    
-    motors.setSpeeds(0,0);
-    delay(STOP_DURATION);
-    motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
-    delay(REVERSE_DURATION);
-    motors.setSpeeds(TURN_SPEED, -TURN_SPEED);
-    delay(turnDuration(true));
-    int forward_speed = forwardSpeed();
-    motors.setSpeeds(forward_speed, forward_speed);
+    turn(RIGHT);
   }
   else if (sensor_values[5] < QTR_THRESHOLD)
   {
     // if rightmost sensor detects line, reverse and turn to the left
-#ifdef LOG_SERIAL
-    Serial.print("turning left ...");
-    Serial.println();
-#endif
-
-    loop_count_since_last_turn = 0;
-    // assume contact lost
-    on_contact_lost();
-    
-    motors.setSpeeds(0,0);
-    delay(STOP_DURATION);
-    motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
-    delay(REVERSE_DURATION);
-    motors.setSpeeds(-TURN_SPEED, TURN_SPEED);
-    delay(turnDuration(true));
-    int forward_speed = forwardSpeed();
-    motors.setSpeeds(forward_speed, forward_speed);
+    turn(LEFT);
   }
   else  // otherwise, go straight
   {
@@ -267,6 +240,27 @@ void loop()
     int forward_speed = forwardSpeed();
     motors.setSpeeds(forward_speed, forward_speed);
   }
+}
+
+void turn(char direction)
+{
+#ifdef LOG_SERIAL
+  Serial.print("turning ...");
+  Serial.println();
+#endif
+
+  // assume contact lost
+  on_contact_lost();
+  
+  // motors.setSpeeds(0,0);
+  // delay(STOP_DURATION);
+  motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
+  delay(REVERSE_DURATION);
+  motors.setSpeeds(TURN_SPEED * direction, -TURN_SPEED * direction);
+  delay(turnDuration(true));
+  int forward_speed = forwardSpeed();
+  motors.setSpeeds(forward_speed, forward_speed);
+  last_turn_time = millis();
 }
 
 // randomized turn duration to improve searching
@@ -278,17 +272,22 @@ unsigned long turnDuration(boolean bRand)
 // set forwards speed
 int forwardSpeed()
 {
-  return contact_made ? \
-    (loop_count_since_last_turn <= FULL_SPEED_LOOP_LIMIT ? FULL_SPEED : SUSTAINED_SPEED) : \
+  int s = contact_made ? \
+    (millis() - contact_made_time <= FULL_SPEED_DURATION_LIMIT ? FULL_SPEED : SUSTAINED_SPEED) : \
     SEARCH_SPEED; // default speed if no contact
+  Serial.print("forward speed:  ");
+  Serial.print(s);
+  Serial.println(); 
+  return s;
 }
   
 // check for contact, but ignore readings immediately after turning or losing contact
 bool check_for_contact()
 {
+  unsigned long ms = millis();
   return (lsm303.len_xy_avg() > 150.0) && \
-    (loop_count_since_last_turn > IGNORE_ACCERATION_AFTER_TURN) && \
-    (millis() - contact_lost_time > MIN_DELAY_BETWEEN_CONTACTS);
+    (ms - last_turn_time > IGNORE_ACCERATION_AFTER_TURN) && \
+    (ms - contact_lost_time > MIN_DELAY_BETWEEN_CONTACTS);
 }
 
 // sound horn and accelerate on contact -- fight or flight
@@ -299,6 +298,7 @@ void on_contact_made()
   Serial.println();
 #endif
   contact_made = true;
+  contact_made_time = millis();
   buzzer.playFromProgramSpace(charge);
 }
 
