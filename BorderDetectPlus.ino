@@ -10,7 +10,7 @@
  
 #define LED 13
 
-// #define LOG_SERIAL // write log output to serial port
+#define LOG_SERIAL // write log output to serial port
  
 // this might need to be tuned for different lighting conditions, surfaces, etc.
 #define QTR_THRESHOLD  1500 // microseconds
@@ -36,7 +36,6 @@ boolean in_contact;
 unsigned long contact_made_time;
 unsigned long last_turn_time;
 unsigned long loop_start_time;
-unsigned long full_speed_start_time;
 
 ZumoBuzzer buzzer;
 const char charge[] PROGMEM = "O4 T100 V0 L4 MS g12>c12>e12>G6>E12 ML>G2";  // use V0 to suppress "charge" sound effect; v15 for max volume
@@ -44,6 +43,7 @@ const char charge[] PROGMEM = "O4 T100 V0 L4 MS g12>c12>e12>G6>E12 ML>G2";  // u
 ZumoMotors motors;
 enum ForwardSpeed { SearchSpeed, SustainedSpeed, FullSpeed };
 ForwardSpeed _forwardSpeed;
+unsigned long full_speed_start_time;
 
 Pushbutton button(ZUMO_BUTTON); // pushbutton on pin 12
  
@@ -97,11 +97,11 @@ class Accelerometer : public LSM303
       last.x = a.x;
       last.y = a.y;
       last.len = sqrt(a.x*a.x + a.y*a.y);
-      last.dir = atan2(a.x, a.y) * 180.0 / M_PI;
+      // last.dir = atan2(a.x, a.y) * 180.0 / M_PI;
       
       ra_x.addValue(last.x);
       ra_y.addValue(last.y);
-      ra_len_xy.addValue(last.len);
+      // ra_len_xy.addValue(last.len); 
  
 #ifdef LOG_SERIAL
      Serial.print(last.timestamp);
@@ -214,7 +214,7 @@ void waitForButtonAndCountDown(bool restarting)
   full_speed_start_time = 0;
 }
 
-void setForwardSpeed(ForwardSpeed speed);
+// void setForwardSpeed(ForwardSpeed speed);
 
 void loop()
 {
@@ -230,7 +230,7 @@ void loop()
   lsm303.readAcceleration(loop_start_time); 
   sensors.read(sensor_values);
   
-  if (getForwardSpeed() == FullSpeed && loop_start_time - full_speed_start_time > FULL_SPEED_DURATION_LIMIT) setForwardSpeed(SustainedSpeed);
+  if (_forwardSpeed == FullSpeed && loop_start_time - full_speed_start_time > FULL_SPEED_DURATION_LIMIT) setForwardSpeed(SustainedSpeed);
   
   if (sensor_values[0] < QTR_THRESHOLD)
   {
