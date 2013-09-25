@@ -10,7 +10,7 @@
  
 #define LED 13
 
-#define LOG_SERIAL // write log output to serial port
+// #define LOG_SERIAL // write log output to serial port
  
 // this might need to be tuned for different lighting conditions, surfaces, etc.
 #define QTR_THRESHOLD  1500 // microseconds
@@ -19,7 +19,7 @@
 #define REVERSE_SPEED     200 // 0 is stopped, 400 is full speed
 #define TURN_SPEED        200
 #define SEARCH_SPEED      200
-#define SUSTAINED_SPEED   325
+#define SUSTAINED_SPEED   400 // switches to SUSTAINED_SPEEND from FULL_SPEED after FULL_SPEED_DURATION_LIMIT ms
 #define FULL_SPEED        400
 #define STOP_DURATION     100 // ms
 #define REVERSE_DURATION  200 // ms
@@ -28,9 +28,10 @@
 #define RIGHT 1
 #define LEFT -1
 
-#define IGNORE_ACCERATION_AFTER_TURN  250    // ms
 #define FULL_SPEED_DURATION_LIMIT     250    // ms
+#define MIN_DELAY_AFTER_TURN          400    // ms
 #define MIN_DELAY_BETWEEN_CONTACTS   1000    // ms = min delay between contact events
+
 boolean in_contact;
 unsigned long contact_made_time;
 unsigned long contact_lost_time;
@@ -208,7 +209,7 @@ void waitForButtonAndCountDown(bool restarting)
   in_contact = false;  // 1 if contact made; 0 if no contact or contact lost
   contact_made_time = 0;
   contact_lost_time = 0;
-  last_turn_time = 0;
+  last_turn_time = millis();  // prevents false contact detection on initial acceleration
 }
 
 void loop()
@@ -265,9 +266,10 @@ void turn(char direction)
 }
 
 // randomized turn duration to improve searching
-unsigned long turnDuration(boolean bRand)
+unsigned long turnDuration(boolean randomize)
 {
-  return bRand ? TURN_DURATION + (random(5) - 2) * 50 : TURN_DURATION;
+  static unsigned int duration_increment = TURN_DURATION / 4;
+  return randomize ? TURN_DURATION + random(6) * duration_increment : TURN_DURATION;
 }
 
 // set forwards speed
@@ -286,7 +288,7 @@ int forwardSpeed()
 bool check_for_contact()
 {
   return (lsm303.len_xy_avg() > 150.0) && \
-    (loop_start_time - last_turn_time > IGNORE_ACCERATION_AFTER_TURN) && \
+    (loop_start_time - last_turn_time > MIN_DELAY_AFTER_TURN) && \
     (loop_start_time - contact_made_time > MIN_DELAY_BETWEEN_CONTACTS) && \
     (loop_start_time - contact_lost_time > MIN_DELAY_BETWEEN_CONTACTS);
 }
