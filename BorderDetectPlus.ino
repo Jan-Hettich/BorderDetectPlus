@@ -138,7 +138,7 @@ class Accelerometer : public LSM303
     void readAcceleration(unsigned long timestamp);
     float x_avg(void) const;
     float y_avg(void) const;
-    float len_xy_avg(void) const;
+    float ss_xy_avg(void) const;
     float dir_xy_avg(void) const;
     float avg_len_xy(void) const;
   private:
@@ -298,7 +298,7 @@ int getForwardSpeed()
 // check for contact, but ignore readings immediately after turning or losing contact
 bool check_for_contact()
 {
-  return (lsm303.len_xy_avg() >  XY_ACCELERATION_THRESHOLD) && \
+  return (lsm303.ss_xy_avg() >  XY_ACCELERATION_THRESHOLD * XY_ACCELERATION_THRESHOLD) && \
     (loop_start_time - last_turn_time > MIN_DELAY_AFTER_TURN) && \
     (loop_start_time - contact_made_time > MIN_DELAY_BETWEEN_CONTACTS);
 }
@@ -356,7 +356,7 @@ void Accelerometer::readAcceleration(unsigned long timestamp)
   last.timestamp = timestamp;
   last.x = a.x;
   last.y = a.y;
-  last.len = sqrt(a.x*a.x + a.y*a.y);
+  // last.len = sqrt(a.x*a.x + a.y*a.y);
   // last.dir = atan2(a.x, a.y) * 180.0 / M_PI;
   
   ra_x.addValue(last.x);
@@ -393,9 +393,9 @@ float Accelerometer::y_avg(void) const
   return ra_y.getAverage();
 }
 
-float Accelerometer::len_xy_avg(void) const
+float Accelerometer::ss_xy_avg(void) const
 {
-  return sqrt(x_avg()*x_avg() + y_avg()*y_avg());
+  return x_avg()*x_avg() + y_avg()*y_avg();
 }
 
 float Accelerometer::dir_xy_avg(void) const
