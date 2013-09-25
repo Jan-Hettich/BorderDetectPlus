@@ -229,12 +229,12 @@ void loop()
   if (sensor_values[0] < QTR_THRESHOLD)
   {
     // if leftmost sensor detects line, reverse and turn to the right
-    turn(RIGHT);
+    turn(RIGHT, true);
   }
   else if (sensor_values[5] < QTR_THRESHOLD)
   {
     // if rightmost sensor detects line, reverse and turn to the left
-    turn(LEFT);
+    turn(LEFT, true);
   }
   else  // otherwise, go straight
   {
@@ -244,7 +244,10 @@ void loop()
   }
 }
 
-void turn(char direction)
+// execute turn 
+// direction:  RIGHT or LEFT
+// randomize: to improve searching
+void turn(char direction, bool randomize)
 {
 #ifdef LOG_SERIAL
   Serial.print("turning ...");
@@ -254,22 +257,17 @@ void turn(char direction)
   // assume contact lost
   on_contact_lost();
   
+  static unsigned int duration_increment = TURN_DURATION / 4;
+  
   // motors.setSpeeds(0,0);
   // delay(STOP_DURATION);
   motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
   delay(REVERSE_DURATION);
   motors.setSpeeds(TURN_SPEED * direction, -TURN_SPEED * direction);
-  delay(turnDuration(true));
+  delay(randomize ? TURN_DURATION + random(6) * duration_increment : TURN_DURATION);
   int forward_speed = forwardSpeed();
   motors.setSpeeds(forward_speed, forward_speed);
   last_turn_time = millis();
-}
-
-// randomized turn duration to improve searching
-unsigned long turnDuration(boolean randomize)
-{
-  static unsigned int duration_increment = TURN_DURATION / 4;
-  return randomize ? TURN_DURATION + random(6) * duration_increment : TURN_DURATION;
 }
 
 // set forwards speed
