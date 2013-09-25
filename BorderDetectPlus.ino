@@ -7,16 +7,17 @@
 #include <Wire.h>
 #include <LSM303.h>
 
-/* This example extends the BorderDetect example by using the accelerometer in the Zumo Shield's onbaord
- * LSM303DLHC with the LSM303 Library to detect contact with an adversary robot in the sumo ring. The LSM303
- * Library is not included in the Zumo Shield libraries; it can be downloaded separately from GitHub at: 
+/* This example uses the accelerometer in the Zumo Shield's onbaord LSM303DLHC with the LSM303 Library to 
+ * detect contact with an adversary robot in the sumo ring. The LSM303 Library is not included in the Zumo 
+ * Shield libraries; it can be downloaded separately from GitHub at: 
  *
  *    https://github.com/pololu/LSM303 
  *
- * The border detection code is the same as in the BorderDetect example, and makes us of the onboard Zumo
- * Reflectance Sensor Array and its associated library.
+ * This example extends the BorderDetect example, which makes use of the onboard Zumo Reflectance Sensor Array
+ * and its associated library to detect the border of the sumo ring.  It also illustrates the use of the 
+ * ZumoMotors, PushButton, and ZumoBuzzer libaries.
  *
- * In loop(), the program reads the x and y components of the acceleration (ignoring z), and detects a
+ * In loop(), the program reads the x and y components of acceleration (ignoring z), and detects a
  * contact when the magnitude of the 3-period average of the x-y vector exceeds an empirically determined
  * XY_ACCELERATION_THRESHOLD.  On contact detection, the forward speed is increased to FULL_SPEED from
  * the default SEARCH_SPEED, simulating a "fight or flight" response.
@@ -39,11 +40,13 @@
  *    period of forward movement at FULL_SPEED.  In the example, both speeds are set to 400 (max), but this 
  *    feature may be useful to prevent runoffs at the turns if the sumo ring surface is unusually smooth.
  *
+ *  - logging of accelerometer output to the serial monitor when LOG_SERIAL is #defined.
+ *
  *  This example aslo makes use of the public domain RunningAverage library from the Arduino website; the relevant
  *  code has been copied into this .ino file and does not need to be downloaded separately.
  */
 
-#define LOG_SERIAL // write log output to serial port
+// #define LOG_SERIAL // write log output to serial port
 
 #define LED 13
 Pushbutton button(ZUMO_BUTTON); // pushbutton on pin 12
