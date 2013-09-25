@@ -273,7 +273,7 @@ void turn(char direction, bool randomize)
   motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
   delay(REVERSE_DURATION);
   motors.setSpeeds(TURN_SPEED * direction, -TURN_SPEED * direction);
-  delay(randomize ? TURN_DURATION + random(6) * duration_increment : TURN_DURATION);
+  delay(randomize ? TURN_DURATION + (random(8) - 2) * duration_increment : TURN_DURATION);
   int speed = getForwardSpeed();
   motors.setSpeeds(speed, speed);
   last_turn_time = millis();
