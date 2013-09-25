@@ -32,6 +32,7 @@
 #define MIN_DELAY_AFTER_TURN          400    // ms
 #define MIN_DELAY_BETWEEN_CONTACTS   1000    // ms = min delay between contact events
 
+#define XY_ACCELERATION_THRESHOLD 150  // for detection of contact (1000 = magnitude of acceleration due to gravity)
 boolean in_contact;
 unsigned long contact_made_time;
 unsigned long last_turn_time;
@@ -82,7 +83,7 @@ class Accelerometer : public LSM303
       writeAccReg(LSM303_CTRL_REG4_A, 0x08); // DLHC: enable high resolution mode
     }
     
-    void getAccelerationHeader(void)
+    void getLogHeader(void)
     {
       Serial.print("millis    x      y     len     dir  | len_avg  dir_avg  |  avg_len");
       Serial.println();
@@ -173,7 +174,7 @@ void setup()
   
 #ifdef LOG_SERIAL
   Serial.begin(9600);
-  lsm303.getAccelerationHeader();
+  lsm303.getLogHeader();
 #endif
 
   randomSeed((unsigned int) millis());
@@ -306,7 +307,7 @@ int getForwardSpeed()
 // check for contact, but ignore readings immediately after turning or losing contact
 bool check_for_contact()
 {
-  return (lsm303.len_xy_avg() > 150.0) && \
+  return (lsm303.len_xy_avg() >  XY_ACCELERATION_THRESHOLD) && \
     (loop_start_time - last_turn_time > MIN_DELAY_AFTER_TURN) && \
     (loop_start_time - contact_made_time > MIN_DELAY_BETWEEN_CONTACTS);
 }
