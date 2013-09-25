@@ -34,14 +34,16 @@
 
 boolean in_contact;
 unsigned long contact_made_time;
-unsigned long contact_lost_time;
 unsigned long last_turn_time;
 unsigned long loop_start_time;
+unsigned long full_speed_start_time;
 
 ZumoBuzzer buzzer;
 const char charge[] PROGMEM = "O4 T100 V0 L4 MS g12>c12>e12>G6>E12 ML>G2";  // use V0 to suppress "charge" sound effect; v15 for max volume
 
 ZumoMotors motors;
+enum ForwardSpeed { SearchSpeed, SustainedSpeed, FullSpeed };
+ForwardSpeed _forwardSpeed;
 
 Pushbutton button(ZUMO_BUTTON); // pushbutton on pin 12
  
@@ -118,7 +120,7 @@ class Accelerometer : public LSM303
      Serial.print("  |  ");
      Serial.print(avg_len_xy());
      Serial.println();
-     #endif
+#endif
     }
     
     float x_avg(void) const
@@ -208,9 +210,11 @@ void waitForButtonAndCountDown(bool restarting)
   // reset loop variables
   in_contact = false;  // 1 if contact made; 0 if no contact or contact lost
   contact_made_time = 0;
-  contact_lost_time = 0;
   last_turn_time = millis();  // prevents false contact detection on initial acceleration
+  full_speed_start_time = 0;
 }
+
+void setForwardSpeed(ForwardSpeed speed);
 
 void loop()
 {
@@ -226,6 +230,8 @@ void loop()
   lsm303.readAcceleration(loop_start_time); 
   sensors.read(sensor_values);
   
+  if (getForwardSpeed() == FullSpeed && loop_start_time - full_speed_start_time > FULL_SPEED_DURATION_LIMIT) setForwardSpeed(SustainedSpeed);
+  
   if (sensor_values[0] < QTR_THRESHOLD)
   {
     // if leftmost sensor detects line, reverse and turn to the right
@@ -239,8 +245,8 @@ void loop()
   else  // otherwise, go straight
   {
     if (check_for_contact()) on_contact_made();
-    int forward_speed = forwardSpeed();
-    motors.setSpeeds(forward_speed, forward_speed);
+    int speed = getForwardSpeed();
+    motors.setSpeeds(speed, speed);
   }
 }
 
@@ -265,21 +271,33 @@ void turn(char direction, bool randomize)
   delay(REVERSE_DURATION);
   motors.setSpeeds(TURN_SPEED * direction, -TURN_SPEED * direction);
   delay(randomize ? TURN_DURATION + random(6) * duration_increment : TURN_DURATION);
-  int forward_speed = forwardSpeed();
-  motors.setSpeeds(forward_speed, forward_speed);
+  int speed = getForwardSpeed();
+  motors.setSpeeds(speed, speed);
   last_turn_time = millis();
 }
 
-// set forwards speed
-int forwardSpeed()
+void setForwardSpeed(ForwardSpeed speed)
 {
-  int s = in_contact ? \
-    (loop_start_time - contact_made_time <= FULL_SPEED_DURATION_LIMIT ? FULL_SPEED : SUSTAINED_SPEED) : \
-    SEARCH_SPEED; // default speed if no contact
-  // Serial.print("forward speed:  ");
-  // Serial.print(s);
-  // Serial.println(); 
-  return s;
+  _forwardSpeed = speed;
+  if (speed == FullSpeed) full_speed_start_time = loop_start_time;
+}
+
+int getForwardSpeed()
+{
+  int speed;
+  switch (_forwardSpeed)
+  {
+    case FullSpeed:
+      speed = FULL_SPEED;
+      break;
+    case SustainedSpeed:
+      speed = SUSTAINED_SPEED;
+      break;
+    default:
+      speed = SEARCH_SPEED;
+      break;
+  }
+  return speed;
 }
   
 // check for contact, but ignore readings immediately after turning or losing contact
@@ -287,8 +305,7 @@ bool check_for_contact()
 {
   return (lsm303.len_xy_avg() > 150.0) && \
     (loop_start_time - last_turn_time > MIN_DELAY_AFTER_TURN) && \
-    (loop_start_time - contact_made_time > MIN_DELAY_BETWEEN_CONTACTS) && \
-    (loop_start_time - contact_lost_time > MIN_DELAY_BETWEEN_CONTACTS);
+    (loop_start_time - contact_made_time > MIN_DELAY_BETWEEN_CONTACTS);
 }
 
 // sound horn and accelerate on contact -- fight or flight
@@ -300,6 +317,7 @@ void on_contact_made()
 #endif
   in_contact = true;
   contact_made_time = loop_start_time;
+  setForwardSpeed(FullSpeed);
   buzzer.playFromProgramSpace(charge);
 }
 
@@ -311,6 +329,6 @@ void on_contact_lost()
   Serial.println();
 #endif
   in_contact = false;
-  contact_lost_time = loop_start_time;
+  setForwardSpeed(SearchSpeed);
 }
 
