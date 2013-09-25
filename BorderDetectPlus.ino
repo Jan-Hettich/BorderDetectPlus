@@ -6,15 +6,62 @@
 #include <avr/pgmspace.h>
 #include <Wire.h>
 #include <LSM303.h>
-#include <RunningAverage.h> // from playground.arduino.cc/Main/RunningAverage
- 
-#define LED 13
 
-// #define LOG_SERIAL // write log output to serial port
- 
+/* This example extends the BorderDetect example by using the accelerometer in the Zumo Shield's onbaord
+ * LSM303DLHC with the LSM303 Library to detect contact with an adversary robot in the sumo ring. The LSM303
+ * Library is not included in the Zumo Shield libraries; it can be downloaded separately from GitHub at: 
+ *
+ *    https://github.com/pololu/LSM303 
+ *
+ * The border detection code is the same as in the BorderDetect example, and makes us of the onboard Zumo
+ * Reflectance Sensor Array and its associated library.
+ *
+ * In loop(), the program reads the x and y components of the acceleration (ignoring z), and detects a
+ * contact when the magnitude of the 3-period average of the x-y vector exceeds an empirically determined
+ * XY_ACCELERATION_THRESHOLD.  On contact detection, the forward speed is increased to FULL_SPEED from
+ * the default SEARCH_SPEED, simulating a "fight or flight" response.
+ *
+ * The program attempts to detect contact only when the Zumo is going straight.  When it is executing a
+ * turn at the sumo ring border, the turn itself generates an acceleration in the x-y plane, so the 
+ * acceleration reading at that time is difficult to interpret for contact detection.  Since the Zumo also 
+ * accelerates forward out of a turn, the acceleration readings are also ignored for MIN_DELAY_AFTER_TURN 
+ * milliseconds after completing a turn. To further avoid false positives, a MIN_DELAY_BETWEEN_CONTACTS is 
+ * also specified.
+ *
+ * This example also contains the following enhancements:
+ * 
+ *  - uses the Zumo Buzzer libary to play a sound effect ("charge" melody) at start of competition and 
+ *    whenever contact is made with an opposing robot
+ *
+ *  - randomizes the turn angle on border detection, so that the Zumo executes a more effective search pattern
+ *
+ *  - supports a FULL_SPEED_DURATION_LIMIT, allowing the robot to switch to a SUSTAINED_SPEED after a short 
+ *    period of forward movement at FULL_SPEED.  In the example, both speeds are set to 400 (max), but this 
+ *    feature may be useful to prevent runoffs at the turns if the sumo ring surface is unusually smooth.
+ *
+ *  This example aslo makes use of the public domain RunningAverage library from the Arduino website; the relevant
+ *  code has been copied into this .ino file and does not need to be downloaded separately.
+ */
+
+#define LOG_SERIAL // write log output to serial port
+
+#define LED 13
+Pushbutton button(ZUMO_BUTTON); // pushbutton on pin 12
+
+// Accelerometer Settings
+#define RA_SIZE 3  // number of readings to include in running average of accelerometer readings
+#define XY_ACCELERATION_THRESHOLD 150  // for detection of contact (1000 = magnitude of acceleration due to gravity)
+
+// Reflectance Sensor Settings
+#define NUM_SENSORS 6
+unsigned int sensor_values[NUM_SENSORS];
 // this might need to be tuned for different lighting conditions, surfaces, etc.
 #define QTR_THRESHOLD  1500 // microseconds
-  
+ZumoReflectanceSensorArray sensors(QTR_NO_EMITTER_PIN); 
+
+// Motor Settings
+ZumoMotors motors;
+
 // these might need to be tuned for different motor types
 #define REVERSE_SPEED     200 // 0 is stopped, 400 is full speed
 #define TURN_SPEED        200
@@ -28,33 +75,47 @@
 #define RIGHT 1
 #define LEFT -1
 
-#define FULL_SPEED_DURATION_LIMIT     250    // ms
-#define MIN_DELAY_AFTER_TURN          400    // ms
-#define MIN_DELAY_BETWEEN_CONTACTS   1000    // ms = min delay between contact events
-
-#define XY_ACCELERATION_THRESHOLD 150  // for detection of contact (1000 = magnitude of acceleration due to gravity)
-boolean in_contact;
-unsigned long contact_made_time;
-unsigned long last_turn_time;
-unsigned long loop_start_time;
-
-ZumoBuzzer buzzer;
-const char charge[] PROGMEM = "O4 T100 V15 L4 MS g12>c12>e12>G6>E12 ML>G2";  // use V0 to suppress "charge" sound effect; v15 for max volume
-
-ZumoMotors motors;
 enum ForwardSpeed { SearchSpeed, SustainedSpeed, FullSpeed };
-ForwardSpeed _forwardSpeed;
+ForwardSpeed _forwardSpeed;  // current forward speed setting
 unsigned long full_speed_start_time;
+#define FULL_SPEED_DURATION_LIMIT     250  // ms
 
-Pushbutton button(ZUMO_BUTTON); // pushbutton on pin 12
+// Sound Effects
+ZumoBuzzer buzzer;
+const char sound_effect[] PROGMEM = "O4 T100 V15 L4 MS g12>c12>e12>G6>E12 ML>G2"; // "charge
+ // use V0 to suppress sound effect; v15 for max volume
  
-#define NUM_SENSORS 6
-unsigned int sensor_values[NUM_SENSORS];
+ // Timing
+unsigned long loop_start_time;
+unsigned long last_turn_time;
+unsigned long contact_made_time;
+#define MIN_DELAY_AFTER_TURN          400  // ms = min delay before detecting contact event
+#define MIN_DELAY_BETWEEN_CONTACTS   1000  // ms = min delay between detecting new contact event
 
-ZumoReflectanceSensorArray sensors(QTR_NO_EMITTER_PIN);
+// RunningAverage class 
+// based on RunningAverage library for Arduino
+// source:  http://playground.arduino.cc/Main/RunningAverage
+class RunningAverage
+{
+  public:
+    RunningAverage(void);
+    RunningAverage(int);
+    ~RunningAverage();
+    void clear();
+    void addValue(float);
+    float getAverage() const;
+    void fillValue(float, int);
 
-#define RA_SIZE 3  // number of readings to include in running average of accelerometer readings
+  protected:
+    int _size;
+    int _cnt;
+    int _idx;
+    float _sum;
+    float * _ar;
+};
 
+// Accelerometer Class -- extends the LSM303 Library to support reading and averaging the x-y acceleration 
+//   vectors from the onboard LSM303DLHC accelerometer/magnetometer
 class Accelerometer : public LSM303
 {
   typedef struct acc_data_xy
@@ -66,101 +127,28 @@ class Accelerometer : public LSM303
     float dir;
   } acc_data_xy;
   
-  public:
-  
-    Accelerometer() : ra_x(RA_SIZE), ra_y(RA_SIZE), ra_len_xy(RA_SIZE) {}
-    
-    // enable accelerometer only
-    // to enables both accelerometer and magnetometer, call enableDefault() instead
-    void enable(void)
-    {
-      // Enable Accelerometer
-      // 0x27 = 0b00100111
-      // Normal power mode, all axes enabled
-      writeAccReg(LSM303_CTRL_REG1_A, 0x27);
-  
-      if (getDeviceType() == LSM303DLHC_DEVICE)
-      writeAccReg(LSM303_CTRL_REG4_A, 0x08); // DLHC: enable high resolution mode
-    }
-    
-    void getLogHeader(void)
-    {
-      Serial.print("millis    x      y     len     dir  | len_avg  dir_avg  |  avg_len");
-      Serial.println();
-    }
-    
-    void readAcceleration(unsigned long timestamp)
-    {
-      readAcc();
-      if (a.x == last.x && a.y == last.y) return;
-      
-      last.timestamp = timestamp;
-      last.x = a.x;
-      last.y = a.y;
-      last.len = sqrt(a.x*a.x + a.y*a.y);
-      // last.dir = atan2(a.x, a.y) * 180.0 / M_PI;
-      
-      ra_x.addValue(last.x);
-      ra_y.addValue(last.y);
-      // ra_len_xy.addValue(last.len); 
- 
-#ifdef LOG_SERIAL
-     Serial.print(last.timestamp);
-     Serial.print("  ");
-     Serial.print(last.x);
-     Serial.print("  ");
-     Serial.print(last.y);
-     Serial.print("  ");
-     Serial.print(last.len);
-     Serial.print("  ");
-     Serial.print(last.dir);
-     Serial.print("  |  ");
-     Serial.print(len_xy_avg());
-     Serial.print("  ");
-     Serial.print(dir_xy_avg());
-     Serial.print("  |  ");
-     Serial.print(avg_len_xy());
-     Serial.println();
-#endif
-    }
-    
-    float x_avg(void) const
-    {
-      // getAverage should have been declared const in RunningAverage class
-      return const_cast<RunningAverage&>(ra_x).getAverage();
-    }
-    
-    float y_avg(void) const
-    {
-      // getAverage should have been declared const in RunningAverage class
-      return const_cast<RunningAverage&>(ra_y).getAverage();
-    }
-    
-    float len_xy_avg(void) const
-    {
-      return sqrt(x_avg()*x_avg() + y_avg()*y_avg());
-    }
-    
-    float dir_xy_avg(void) const
-    {
-      return atan2(x_avg(), y_avg()) * 180.0 / M_PI;
-    }
-    
-    float avg_len_xy(void) const
-    {
-      // getAverage should have been declared const in RunningAverage class
-      return const_cast<RunningAverage&>(ra_len_xy).getAverage();
-    }
-    
+  public: 
+    Accelerometer() : ra_x(RA_SIZE), ra_y(RA_SIZE), ra_len_xy(RA_SIZE) {};
+    ~Accelerometer() {};
+    void enable(void);
+    void getLogHeader(void);
+    void readAcceleration(unsigned long timestamp);
+    float x_avg(void) const;
+    float y_avg(void) const;
+    float len_xy_avg(void) const;
+    float dir_xy_avg(void) const;
+    float avg_len_xy(void) const;
   private:
     acc_data_xy last;
     RunningAverage ra_x;
     RunningAverage ra_y;
-    RunningAverage ra_len_xy;  // running average xy vector magnitues
+    RunningAverage ra_len_xy;  // running average xy vector magnitues   
 };
-Accelerometer lsm303;
 
-void waitForButtonAndCountDown(bool restarting);
+Accelerometer lsm303;
+boolean in_contact;  // set when accelerometer detects contact with opposing robot
+
+// forward declaration
 void setForwardSpeed(ForwardSpeed speed);
 
 void setup()
@@ -206,7 +194,7 @@ void waitForButtonAndCountDown(bool restarting)
     buzzer.playNote(NOTE_G(3), 50, 12);
   }
   delay(1000);
-  buzzer.playFromProgramSpace(charge);
+  buzzer.playFromProgramSpace(sound_effect);
   delay(1000);
   
   // reset loop variables
@@ -322,7 +310,7 @@ void on_contact_made()
   in_contact = true;
   contact_made_time = loop_start_time;
   setForwardSpeed(FullSpeed);
-  buzzer.playFromProgramSpace(charge);
+  buzzer.playFromProgramSpace(sound_effect);
 }
 
 // reset forward speed
@@ -335,4 +323,146 @@ void on_contact_lost()
   in_contact = false;
   setForwardSpeed(SearchSpeed);
 }
+
+// class Accelerometer -- member function definitions
+
+// enable accelerometer only
+// to enables both accelerometer and magnetometer, call enableDefault() instead
+void Accelerometer::enable(void)
+{
+  // Enable Accelerometer
+  // 0x27 = 0b00100111
+  // Normal power mode, all axes enabled
+  writeAccReg(LSM303_CTRL_REG1_A, 0x27);
+
+  if (getDeviceType() == LSM303DLHC_DEVICE)
+  writeAccReg(LSM303_CTRL_REG4_A, 0x08); // DLHC: enable high resolution mode
+}
+
+void Accelerometer::getLogHeader(void)
+{
+  Serial.print("millis    x      y     len     dir  | len_avg  dir_avg  |  avg_len");
+  Serial.println();
+}
+
+void Accelerometer::readAcceleration(unsigned long timestamp)
+{
+  readAcc();
+  if (a.x == last.x && a.y == last.y) return;
+  
+  last.timestamp = timestamp;
+  last.x = a.x;
+  last.y = a.y;
+  last.len = sqrt(a.x*a.x + a.y*a.y);
+  // last.dir = atan2(a.x, a.y) * 180.0 / M_PI;
+  
+  ra_x.addValue(last.x);
+  ra_y.addValue(last.y);
+  // ra_len_xy.addValue(last.len); 
+ 
+#ifdef LOG_SERIAL
+ Serial.print(last.timestamp);
+ Serial.print("  ");
+ Serial.print(last.x);
+ Serial.print("  ");
+ Serial.print(last.y);
+ Serial.print("  ");
+ Serial.print(last.len);
+ Serial.print("  ");
+ Serial.print(last.dir);
+ Serial.print("  |  ");
+ Serial.print(len_xy_avg());
+ Serial.print("  ");
+ Serial.print(dir_xy_avg());
+ Serial.print("  |  ");
+ Serial.print(avg_len_xy());
+ Serial.println();
+#endif
+}
+
+float Accelerometer::x_avg(void) const
+{
+  return ra_x.getAverage();
+}
+
+float Accelerometer::y_avg(void) const
+{
+  return ra_y.getAverage();
+}
+
+float Accelerometer::len_xy_avg(void) const
+{
+  return sqrt(x_avg()*x_avg() + y_avg()*y_avg());
+}
+
+float Accelerometer::dir_xy_avg(void) const
+{
+  return atan2(x_avg(), y_avg()) * 180.0 / M_PI;
+}
+
+float Accelerometer::avg_len_xy(void) const
+{
+  return ra_len_xy.getAverage();
+}
+
+
+
+// RunningAverage class 
+// based on RunningAverage library for Arduino
+// source:  http://playground.arduino.cc/Main/RunningAverage
+// author:  Rob.Tillart@gmail.com
+// Released to the public domain
+
+RunningAverage::RunningAverage(int n)
+{
+  _size = n;
+  _ar = (float*) malloc(_size * sizeof(float));
+  clear();
+}
+
+RunningAverage::~RunningAverage()
+{
+  free(_ar);
+}
+
+// resets all counters
+void RunningAverage::clear() 
+{ 
+  _cnt = 0;
+  _idx = 0;
+  _sum = 0.0;
+  for (int i = 0; i< _size; i++) _ar[i] = 0.0;  // needed to keep addValue simple
+}
+
+// adds a new value to the data-set
+void RunningAverage::addValue(float f)
+{
+  _sum -= _ar[_idx];
+  _ar[_idx] = f;
+  _sum += _ar[_idx];
+  _idx++;
+  if (_idx == _size) _idx = 0;  // faster than %
+  if (_cnt < _size) _cnt++;
+}
+
+// returns the average of the data-set added sofar
+float RunningAverage::getAverage() const
+{
+  if (_cnt == 0) return 0; // NaN ?  math.h
+  return _sum / _cnt;
+}
+
+// fill the average with a value
+// the param number determines how often value is added (weight)
+// number should preferably be between 1 and size
+void RunningAverage::fillValue(float value, int number)
+{
+  clear();
+  for (int i = 0; i < number; i++) 
+  {
+    addValue(value);
+  }
+}
+
+
 
