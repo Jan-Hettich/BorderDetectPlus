@@ -31,8 +31,7 @@
  *
  * This example also contains the following enhancements:
  * 
- *  - uses the Zumo Buzzer libary to play a sound effect ("charge" melody) at start of competition and 
- *    whenever contact is made with an opposing robot
+ *  - uses the Zumo Buzzer libary to play a sound effect ("charge" melody) whenever contact is made with an opposing robot
  *
  *  - randomizes the turn angle on border detection, so that the Zumo executes a more effective search pattern
  *
@@ -197,7 +196,7 @@ void waitForButtonAndCountDown(bool restarting)
     buzzer.playNote(NOTE_G(3), 50, 12);
   }
   delay(1000);
-  buzzer.playFromProgramSpace(sound_effect);
+  buzzer.playNote(NOTE_G(4), 500, 15);
   delay(1000);
   
   // reset loop variables
