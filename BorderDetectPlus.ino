@@ -98,6 +98,7 @@ unsigned long contact_made_time;
 // RunningAverage class 
 // based on RunningAverage library for Arduino
 // source:  http://playground.arduino.cc/Main/RunningAverage
+template <typename T> 
 class RunningAverage
 {
   public:
@@ -105,16 +106,16 @@ class RunningAverage
     RunningAverage(int);
     ~RunningAverage();
     void clear();
-    void addValue(float);
-    float getAverage() const;
-    void fillValue(float, int);
-
+    void addValue(T);
+    T getAverage() const;
+    void fillValue(T, int);
   protected:
     int _size;
     int _cnt;
     int _idx;
-    float _sum;
-    float * _ar;
+    T _sum;
+    T * _ar;
+    static T zero;
 };
 
 // Accelerometer Class -- extends the LSM303 Library to support reading and averaging the x-y acceleration 
@@ -143,9 +144,9 @@ class Accelerometer : public LSM303
     float avg_len_xy(void) const;
   private:
     acc_data_xy last;
-    RunningAverage ra_x;
-    RunningAverage ra_y;
-    RunningAverage ra_len_xy;  // running average xy vector magnitues   
+    RunningAverage<float> ra_x;
+    RunningAverage<float> ra_y;
+    RunningAverage<float> ra_len_xy;  // running average xy vector magnitues   
 };
 
 Accelerometer lsm303;
@@ -374,7 +375,7 @@ void Accelerometer::readAcceleration(unsigned long timestamp)
  Serial.print("  ");
  Serial.print(last.dir);
  Serial.print("  |  ");
- Serial.print(len_xy_avg());
+ Serial.print(sqrt(ss_xy_avg()));
  Serial.print("  ");
  Serial.print(dir_xy_avg());
  Serial.print("  |  ");
@@ -416,29 +417,36 @@ float Accelerometer::avg_len_xy(void) const
 // author:  Rob.Tillart@gmail.com
 // Released to the public domain
 
-RunningAverage::RunningAverage(int n)
+template <typename T>
+T RunningAverage<T>::zero = static_cast<T>(0);
+
+template <typename T>
+RunningAverage<T>::RunningAverage(int n)
 {
   _size = n;
-  _ar = (float*) malloc(_size * sizeof(float));
+  _ar = (T*) malloc(_size * sizeof(T));
   clear();
 }
 
-RunningAverage::~RunningAverage()
+template <typename T>
+RunningAverage<T>::~RunningAverage()
 {
   free(_ar);
 }
 
 // resets all counters
-void RunningAverage::clear() 
+template <typename T>
+void RunningAverage<T>::clear() 
 { 
   _cnt = 0;
   _idx = 0;
-  _sum = 0.0;
-  for (int i = 0; i< _size; i++) _ar[i] = 0.0;  // needed to keep addValue simple
+  _sum = zero;
+  for (int i = 0; i< _size; i++) _ar[i] = zero;  // needed to keep addValue simple
 }
 
 // adds a new value to the data-set
-void RunningAverage::addValue(float f)
+template <typename T>
+void RunningAverage<T>::addValue(T f)
 {
   _sum -= _ar[_idx];
   _ar[_idx] = f;
@@ -449,7 +457,8 @@ void RunningAverage::addValue(float f)
 }
 
 // returns the average of the data-set added sofar
-float RunningAverage::getAverage() const
+template <typename T>
+T RunningAverage<T>::getAverage() const
 {
   if (_cnt == 0) return 0; // NaN ?  math.h
   return _sum / _cnt;
@@ -458,7 +467,8 @@ float RunningAverage::getAverage() const
 // fill the average with a value
 // the param number determines how often value is added (weight)
 // number should preferably be between 1 and size
-void RunningAverage::fillValue(float value, int number)
+template <typename T>
+void RunningAverage<T>::fillValue(T value, int number)
 {
   clear();
   for (int i = 0; i < number; i++) 
