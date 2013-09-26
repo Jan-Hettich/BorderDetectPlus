@@ -42,7 +42,7 @@
  *
  *  - logging of accelerometer output to the serial monitor when LOG_SERIAL is #defined.
  *
- *  This example aslo makes use of the public domain RunningAverage library from the Arduino website; the relevant
+ *  This example also makes use of the public domain RunningAverage library from the Arduino website; the relevant
  *  code has been copied into this .ino file and does not need to be downloaded separately.
  */
 
@@ -125,28 +125,27 @@ class Accelerometer : public LSM303
   typedef struct acc_data_xy
   {
     unsigned long timestamp;
-    float x;
-    float y;
-    float len;
+    int x;
+    int y;
     float dir;
   } acc_data_xy;
   
   public: 
-    Accelerometer() : ra_x(RA_SIZE), ra_y(RA_SIZE), ra_len_xy(RA_SIZE) {};
+    Accelerometer() : ra_x(RA_SIZE), ra_y(RA_SIZE) {};
     ~Accelerometer() {};
     void enable(void);
     void getLogHeader(void);
     void readAcceleration(unsigned long timestamp);
-    float x_avg(void) const;
-    float y_avg(void) const;
-    float ss_xy_avg(void) const;
+    float len_xy() const;
+    float dir_xy() const;
+    int x_avg(void) const;
+    int y_avg(void) const;
+    long ss_xy_avg(void) const;
     float dir_xy_avg(void) const;
-    float avg_len_xy(void) const;
   private:
     acc_data_xy last;
-    RunningAverage<float> ra_x;
-    RunningAverage<float> ra_y;
-    RunningAverage<float> ra_len_xy;  // running average xy vector magnitues   
+    RunningAverage<int> ra_x;
+    RunningAverage<int> ra_y;   
 };
 
 Accelerometer lsm303;
@@ -299,7 +298,8 @@ int getForwardSpeed()
 // check for contact, but ignore readings immediately after turning or losing contact
 bool check_for_contact()
 {
-  return (lsm303.ss_xy_avg() >  XY_ACCELERATION_THRESHOLD * XY_ACCELERATION_THRESHOLD) && \
+  static long threshold_squared = (long) XY_ACCELERATION_THRESHOLD * (long) XY_ACCELERATION_THRESHOLD;
+  return (lsm303.ss_xy_avg() >  threshold_squared) && \
     (loop_start_time - last_turn_time > MIN_DELAY_AFTER_TURN) && \
     (loop_start_time - contact_made_time > MIN_DELAY_BETWEEN_CONTACTS);
 }
@@ -352,17 +352,16 @@ void Accelerometer::getLogHeader(void)
 void Accelerometer::readAcceleration(unsigned long timestamp)
 {
   readAcc();
-  if (a.x == last.x && a.y == last.y) return;
+  int a_x = static_cast<int>(a.x);
+  int a_y = static_cast<int>(a.y);
+  if (a_x == last.x && a_y == last.y) return;
   
   last.timestamp = timestamp;
-  last.x = a.x;
-  last.y = a.y;
-  // last.len = sqrt(a.x*a.x + a.y*a.y);
-  // last.dir = atan2(a.x, a.y) * 180.0 / M_PI;
+  last.x = a_x;
+  last.y = a_y;
   
   ra_x.addValue(last.x);
   ra_y.addValue(last.y);
-  // ra_len_xy.addValue(last.len); 
  
 #ifdef LOG_SERIAL
  Serial.print(last.timestamp);
@@ -371,42 +370,47 @@ void Accelerometer::readAcceleration(unsigned long timestamp)
  Serial.print("  ");
  Serial.print(last.y);
  Serial.print("  ");
- Serial.print(last.len);
+ Serial.print(len_xy());
  Serial.print("  ");
- Serial.print(last.dir);
+ Serial.print(dir_xy());
  Serial.print("  |  ");
- Serial.print(sqrt(ss_xy_avg()));
+ Serial.print(sqrt(static_cast<float>(ss_xy_avg())));
  Serial.print("  ");
  Serial.print(dir_xy_avg());
- Serial.print("  |  ");
- Serial.print(avg_len_xy());
  Serial.println();
 #endif
 }
 
-float Accelerometer::x_avg(void) const
+float Accelerometer::len_xy() const
+{
+  return sqrt(last.x*a.x + last.y*a.y);
+}
+
+float Accelerometer::dir_xy() const
+{
+  return atan2(last.x, last.y) * 180.0 / M_PI;
+}
+
+int Accelerometer::x_avg(void) const
 {
   return ra_x.getAverage();
 }
 
-float Accelerometer::y_avg(void) const
+int Accelerometer::y_avg(void) const
 {
   return ra_y.getAverage();
 }
 
-float Accelerometer::ss_xy_avg(void) const
+long Accelerometer::ss_xy_avg(void) const
 {
-  return x_avg()*x_avg() + y_avg()*y_avg();
+  long x_avg_long = static_cast<long>(x_avg());
+  long y_avg_long = static_cast<long>(y_avg()); 
+  return x_avg_long*x_avg_long + y_avg_long*y_avg_long;
 }
 
 float Accelerometer::dir_xy_avg(void) const
 {
-  return atan2(x_avg(), y_avg()) * 180.0 / M_PI;
-}
-
-float Accelerometer::avg_len_xy(void) const
-{
-  return ra_len_xy.getAverage();
+  return atan2(static_cast<float>(x_avg()), static_cast<float>(y_avg())) * 180.0 / M_PI;
 }
 
 
