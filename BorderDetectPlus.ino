@@ -464,7 +464,7 @@ void RunningAverage<T>::addValue(T f)
 template <typename T>
 T RunningAverage<T>::getAverage() const
 {
-  if (_cnt == 0) return 0; // NaN ?  math.h
+  if (_cnt == 0) return zero; // NaN ?  math.h
   return _sum / _cnt;
 }
 
